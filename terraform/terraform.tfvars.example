@@ -1,0 +1,26 @@
+# Terraform Examples Directory
+examples = "terraform.tfvars.example"
+
+# Development Environment
+environment = "dev"
+location    = "East US"
+project_name = "employee-mgmt"
+
+# Networking Configuration
+vnet_address_space               = ["10.0.0.0/16"]
+app_subnet_address_prefixes      = ["10.0.1.0/24"]
+db_subnet_address_prefixes       = ["10.0.2.0/24"]
+frontend_subnet_address_prefixes = ["10.0.3.0/24"]
+
+# Cosmos DB Configuration
+cosmos_consistency_level                 = "Session"
+cosmos_enable_automatic_failover         = false
+cosmos_enable_multiple_write_locations   = false
+
+# App Service Configuration
+app_service_sku_name = "B1"
+app_service_os_type  = "Linux"
+
+# Static Web App Configuration
+static_web_app_sku_tier = "Free"
+static_web_app_sku_size = "Free"

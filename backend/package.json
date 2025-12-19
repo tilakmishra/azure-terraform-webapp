@@ -1,0 +1,42 @@
+{
+  "name": "employee-management-api",
+  "version": "1.0.0",
+  "description": "Employee Management API with Cosmos DB integration",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "nodemon server.js",
+    "build": "npm install --production",
+    "test": "jest",
+    "seed": "node scripts/seed-data.js"
+  },
+  "dependencies": {
+    "@azure/cosmos": "^4.0.0",
+    "@azure/identity": "^4.0.0",
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "helmet": "^7.1.0",
+    "express-rate-limit": "^7.1.0",
+    "compression": "^1.7.4",
+    "dotenv": "^16.3.1",
+    "uuid": "^9.0.1",
+    "joi": "^17.11.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.1",
+    "jest": "^29.7.0",
+    "supertest": "^6.3.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "keywords": [
+    "employee",
+    "management",
+    "cosmos-db",
+    "azure",
+    "api"
+  ],
+  "author": "Your Name",
+  "license": "MIT"
+}

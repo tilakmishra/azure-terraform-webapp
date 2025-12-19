@@ -1,0 +1,23 @@
+# Ignore everything by default
+*
+
+# Include README
+!README.md
+
+# Include terraform folder and its contents
+!terraform/
+!terraform/**
+
+# But exclude sensitive terraform files
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/*.tfplan
+terraform/.terraform.lock.hcl
+terraform/crash.log
+terraform/*.tfvars
+!terraform/*.tfvars.example
+terraform/override.tf
+terraform/override.tf.json
+terraform/*_override.tf
+terraform/*_override.tf.json

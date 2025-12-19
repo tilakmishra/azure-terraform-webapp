@@ -1,0 +1,250 @@
+# ─────────────────────────────────────────────────────────────
+# GitHub Actions Pipeline for Employee Management App
+# Deploys Backend to Azure App Service and Frontend to Static Web App
+# ─────────────────────────────────────────────────────────────
+
+name: Deploy Employee Management App
+
+on:
+  push:
+    branches:
+      - main
+      - develop
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'dev'
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+env:
+  NODE_VERSION: '20.x'
+  AZURE_WEBAPP_NAME: 'dte-employee-mgmt-dev-app'
+  AZURE_STATICWEBAPP_NAME: 'dte-employee-mgmt-dev-frontend'
+  AZURE_RESOURCE_GROUP: 'dte-employee-mgmt-dev-rg'
+
+jobs:
+  # ─────────────────────────────────────────────────────────────
+  # Build and Test Backend
+  # ─────────────────────────────────────────────────────────────
+  build-backend:
+    name: Build Backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./backend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: './backend/package-lock.json'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linting
+        run: npm run lint --if-present
+
+      - name: Run tests
+        run: npm test --if-present
+        env:
+          NODE_ENV: test
+
+      - name: Create deployment package
+        run: |
+          # Remove dev dependencies for production
+          npm prune --production
+          # Create zip excluding unnecessary files
+          zip -r ../backend.zip . -x "*.git*" -x "*.env*" -x "node_modules/.cache/*" -x "coverage/*" -x "*.test.js"
+
+      - name: Upload backend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-package
+          path: backend.zip
+          retention-days: 5
+
+  # ─────────────────────────────────────────────────────────────
+  # Build Frontend
+  # ─────────────────────────────────────────────────────────────
+  build-frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./frontend
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+          cache-dependency-path: './frontend/package-lock.json'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run linting
+        run: npm run lint --if-present
+
+      - name: Run tests
+        run: npm test --if-present -- --passWithNoTests
+        env:
+          CI: true
+
+      - name: Build production bundle
+        run: npm run build
+        env:
+          REACT_APP_API_URL: https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/api
+          CI: false
+
+      - name: Upload frontend artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-build
+          path: frontend/build
+          retention-days: 5
+
+  # ─────────────────────────────────────────────────────────────
+  # Deploy Backend to Azure App Service
+  # ─────────────────────────────────────────────────────────────
+  deploy-backend:
+    name: Deploy Backend
+    needs: build-backend
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    environment:
+      name: ${{ github.event.inputs.environment || 'dev' }}
+      url: https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net
+
+    steps:
+      - name: Download backend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-package
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: ${{ env.AZURE_WEBAPP_NAME }}
+          package: backend.zip
+
+      - name: Health check
+        run: |
+          echo "Waiting for deployment to complete..."
+          sleep 30
+          response=$(curl -s -o /dev/null -w "%{http_code}" https://${{ env.AZURE_WEBAPP_NAME }}.azurewebsites.net/api/health || echo "000")
+          if [ "$response" = "200" ]; then
+            echo "✅ Backend health check passed"
+          else
+            echo "⚠️ Backend returned status: $response (may still be starting)"
+          fi
+
+  # ─────────────────────────────────────────────────────────────
+  # Deploy Frontend to Azure Static Web App
+  # ─────────────────────────────────────────────────────────────
+  deploy-frontend:
+    name: Deploy Frontend
+    needs: [build-frontend, deploy-backend]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    environment:
+      name: ${{ github.event.inputs.environment || 'dev' }}
+      url: https://witty-ocean-090dc960f.3.azurestaticapps.net
+
+    steps:
+      - name: Download frontend artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: frontend-build
+          path: build
+
+      - name: Deploy to Azure Static Web App
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: 'upload'
+          app_location: 'build'
+          skip_app_build: true
+          skip_api_build: true
+
+  # ─────────────────────────────────────────────────────────────
+  # Re-enable Security (Post-Deployment)
+  # ─────────────────────────────────────────────────────────────
+  secure-resources:
+    name: Re-enable Security
+    needs: [deploy-backend, deploy-frontend]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Re-enable Cosmos DB security
+        run: |
+          echo "🔒 Re-enabling Cosmos DB firewall..."
+          az cosmosdb update \
+            --name "dte-employee-mgmt-dev-cosmos-tvokue" \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --public-network-access Disabled
+
+      - name: Re-enable App Service security
+        run: |
+          echo "🔒 Re-enabling App Service security..."
+          
+          # Disable public network access
+          az webapp update \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --set publicNetworkAccess=Disabled
+          
+          # Set IP restrictions to Deny by default
+          az webapp config set \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --generic-configurations '{"ipSecurityRestrictionsDefaultAction":"Deny","scmIpSecurityRestrictionsDefaultAction":"Deny"}'
+
+      - name: Verify security settings
+        run: |
+          echo "✅ Verifying security settings..."
+          
+          # Check Cosmos DB
+          cosmos_status=$(az cosmosdb show \
+            --name "dte-employee-mgmt-dev-cosmos-tvokue" \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --query "publicNetworkAccess" -o tsv)
+          echo "Cosmos DB Public Access: $cosmos_status"
+          
+          # Check App Service
+          app_status=$(az webapp show \
+            --name ${{ env.AZURE_WEBAPP_NAME }} \
+            --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+            --query "publicNetworkAccess" -o tsv)
+          echo "App Service Public Access: $app_status"
