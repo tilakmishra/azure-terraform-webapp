@@ -53,8 +53,9 @@ resource "azurerm_linux_web_app" "main" {
     scm_use_main_ip_restriction       = true
     vnet_route_all_enabled            = true
     
+    # Configure Python runtime for Linux Web App
     application_stack {
-      node_version = "18-lts"
+      python_version = "3.11"
     }
 
     # Restrict access to VNet and Frontend only
@@ -72,10 +73,9 @@ resource "azurerm_linux_web_app" "main" {
     "COSMOS_ENDPOINT"     = var.cosmos_endpoint
     "COSMOS_DATABASE"     = var.database_name
     "COSMOS_CONTAINER"    = var.container_name
-    "NODE_ENV"            = var.environment
-    "WEBSITE_NODE_DEFAULT_VERSION" = "~18"
+    "PYTHON_ENV"          = var.environment
     "SCM_DO_BUILD_DURING_DEPLOYMENT" = "true"
-    "ENABLE_ORYX_BUILD" = "true"
+    "ENABLE_ORYX_BUILD"              = "true"
   }
 
   # Connection strings - using managed identity
